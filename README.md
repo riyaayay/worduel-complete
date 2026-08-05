@@ -77,7 +77,7 @@ I built and ran this, not just wrote it. In order:
   80 simultaneous dials; real traffic ramps up, it doesn't arrive as one
   spike) before quoting a "0 errors" number anywhere.
 
-## What's stubbed vs. real (be honest about this in an interview)
+## What's stubbed vs. real 
 
 | Piece | Status |
 |---|---|
