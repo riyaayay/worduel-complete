@@ -77,40 +77,6 @@ I built and ran this, not just wrote it. In order:
   80 simultaneous dials; real traffic ramps up, it doesn't arrive as one
   spike) before quoting a "0 errors" number anywhere.
 
-## What's stubbed vs. real 
-
-| Piece | Status |
-|---|---|
-| Trie word validation | **Real.** 63,612-word dictionary (derived from the system's American English word list) embedded in the binary. O(k) lookups, tested. |
-| Matchmaking (channels + goroutines) | **Real.** Buffered channel queue, single pairing goroutine, verified live. |
-| Game session (goroutine-owned state) | **Real.** No mutex on match state — verified via the race-condition fix above, which is itself good interview material ("tell me about a concurrency bug you found"). |
-| WebSocket real-time sync | **Real.** Verified with a live two-client test. |
-| PostgreSQL | **Schema only** (`worduel-backend/schema.sql`). The running server uses an in-memory store behind a `Store` interface — swapping in a real Postgres-backed implementation is additive, not a rewrite. Say this plainly if asked. |
-| Redis | **Not implemented**, described only in the plan/README. If you want it, it's a genuinely small addition: cache `Session.snapshot()` output in a `match:{id}` hash on each move, and use a sorted set for the leaderboard instead of the in-memory store's `sort.Slice`. |
-| Android client | **Full MVVM source**, written and internally consistent with the backend's actual JSON shapes (I cross-checked field names against the Go structs). **Not compiled** — this sandbox has no Android SDK. Open it in Android Studio, point `BuildConfig.API_BASE_URL` / `WS_BASE_URL` at your running backend (defaults to the emulator's `10.0.2.2` alias), and build. If you can't get to this before your interview, the honest move — per the original plan — is to scope your resume bullet to the backend only. |
-| Load test | **Real**, ran it, numbers above are from an actual run, not guessed. |
-
-## Architecture notes for interview talking points
-
-- **Why channels instead of mutexes for matchmaking/sessions**: a channel
-  is both the data structure and the synchronization primitive. The
-  matchmaking queue is a buffered channel; pairing is "read twice, pair
-  them" with no lock. Each match session is a goroutine that owns its state
-  exclusively — moves arrive on a channel and are processed one at a time,
-  so there's no shared mutable state to race on. The one place I *do* use a
-  mutex (`ws.Hub`'s connection registry, `store.MemoryStore`) is
-  deliberate: those really are shared across many goroutines reading and
-  writing concurrently, and a mutex is the right tool there — not
-  everything should be channels.
-- **Why a trie, not a hash set, for the dictionary**: `IsValidWord` is O(k)
-  either way for the k-length word being checked, but the trie also gives
-  `WordsWithPrefix` almost for free (a DFS from the prefix node) — that's
-  the hint feature, and a second, richer trie use case to talk about beyond
-  "I did a lookup."
-- **Why the board is a 16-letter multiset check, not a full Boggle
-  adjacency graph**: intentional scope cut to keep move validation O(word
-  length) instead of adding a path-search over the board. Worth mentioning
-  as a deliberate simplification if asked, not something you're unaware of.
 
 ## ER diagram (draw this live)
 
