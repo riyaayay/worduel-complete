@@ -78,7 +78,7 @@ I built and ran this, not just wrote it. In order:
   spike) before quoting a "0 errors" number anywhere.
 
 
-## ER diagram (draw this live)
+## ER diagram
 
 See `worduel-backend/schema.sql` for the full schema + comments on *why*
 each design choice was made (denormalizing `board` onto `matches`, storing
