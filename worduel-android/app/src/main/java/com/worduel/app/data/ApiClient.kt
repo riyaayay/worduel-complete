@@ -16,7 +16,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 
 /**
- * Thin REST client over the Go backend's /api/* endpoints. Deliberately
+ * Thin REST client over the Go backend's /api/ endpoints. Deliberately
  * hand-rolled with OkHttp + Moshi rather than Retrofit — three endpoints
  * don't need the extra abstraction, and it keeps the whole networking
  * layer readable in one place for a take-home / interview-prep project.

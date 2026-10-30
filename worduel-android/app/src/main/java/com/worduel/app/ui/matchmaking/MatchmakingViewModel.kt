@@ -47,6 +47,10 @@ class MatchmakingViewModel(
         }
     }
 
+    fun requireUsername() {
+        _state.value = MatchmakingState.Error("Enter a username first")
+    }
+
     private suspend fun pollUntilMatched(playerId: String) {
         repeat(60) { // ~60s timeout
             val status = api.queueStatus(playerId)

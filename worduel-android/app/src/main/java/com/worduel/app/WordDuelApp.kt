@@ -1,5 +1,6 @@
 package com.worduel.app
 
+import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -7,15 +8,18 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.worduel.app.data.models.MatchResult
 import com.worduel.app.ui.match.LiveMatchScreen
+import com.worduel.app.ui.match.LocalMatchScreen
 import com.worduel.app.ui.matchmaking.MatchmakingScreen
 import com.worduel.app.ui.results.ResultsScreen
 
 private object Routes {
     const val MATCHMAKING = "matchmaking"
     const val LIVE_MATCH = "live_match/{playerId}/{matchId}"
+    const val LOCAL_MATCH = "local_match/{username}"
     const val RESULTS = "results"
 
     fun liveMatch(playerId: String, matchId: String) = "live_match/$playerId/$matchId"
+    fun localMatch(username: String) = "local_match/${Uri.encode(username)}"
 }
 
 /**
@@ -35,6 +39,21 @@ fun WordDuelApp(navController: NavHostController = rememberNavController()) {
             MatchmakingScreen(
                 onMatched = { playerId, matchId ->
                     navController.navigate(Routes.liveMatch(playerId, matchId))
+                },
+                onPlayLocal = { username -> navController.navigate(Routes.localMatch(username)) }
+            )
+        }
+
+        composable(Routes.LOCAL_MATCH) { backStackEntry ->
+            val username = backStackEntry.arguments?.getString("username").orEmpty()
+            LocalMatchScreen(
+                username = username,
+                onMatchEnded = { result, myPlayerId ->
+                    lastMatchResult = result
+                    lastMatchMyPlayerId = myPlayerId
+                    navController.navigate(Routes.RESULTS) {
+                        popUpTo(Routes.MATCHMAKING)
+                    }
                 }
             )
         }

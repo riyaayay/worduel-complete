@@ -11,6 +11,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -31,6 +32,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 @Composable
 fun MatchmakingScreen(
     onMatched: (playerId: String, matchId: String) -> Unit,
+    onPlayLocal: (username: String) -> Unit,
     viewModel: MatchmakingViewModel = viewModel()
 ) {
     val state by viewModel.state.collectAsState()
@@ -59,6 +61,15 @@ fun MatchmakingScreen(
                     onClick = { viewModel.findMatch(username) },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Find Match") }
+
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = {
+                        if (username.isBlank()) viewModel.requireUsername()
+                        else onPlayLocal(username.trim())
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Practice vs WordBot (offline)") }
 
                 if (s is MatchmakingState.Error) {
                     Spacer(Modifier.height(12.dp))

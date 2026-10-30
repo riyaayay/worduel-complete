@@ -12,3 +12,45 @@ worduel-backend/*.exe
 # Android output
 worduel-android/app/build/
 worduel-android/build/
+worduel-android/gradle.properties
+# ====================================================================
+# Android / Gradle Configurations & Caches
+# ====================================================================
+.gradle/
+build/
+app/build/
+*.iml
+.idea/
+local.properties
+.navigation/
+
+# Android Keystores & Production App Files
+# (NEVER commit your signing keys or passwords to GitHub!)
+*.jks
+*.keystore
+*.apk
+*.aab
+
+# ====================================================================
+# Go Backend Build Artifacts
+# ====================================================================
+# Main server binaries
+worduel-server
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go workspace and local tool configurations
+go.work
+.golangci.yml
+
+# ====================================================================
+# Operating System & IDE Leftovers
+# ====================================================================
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.*
