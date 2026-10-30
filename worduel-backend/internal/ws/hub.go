@@ -65,6 +65,10 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request, matchID, playerID 
 		http.Error(w, "unknown match", http.StatusNotFound)
 		return
 	}
+	if !entry.session.HasPlayer(playerID) {
+		http.Error(w, "player is not part of this match", http.StatusForbidden)
+		return
+	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -75,8 +79,14 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request, matchID, playerID 
 	c := &client{playerID: playerID, matchID: matchID, conn: conn, send: make(chan interface{}, 16)}
 
 	h.mu.Lock()
+	previous := entry.clients[playerID]
 	entry.clients[playerID] = c
 	h.mu.Unlock()
+	if previous != nil {
+		// Reconnecting replaces the old socket. Its cleanup checks identity,
+		// so it cannot remove this new connection from the registry.
+		previous.conn.Close()
+	}
 
 	go h.writePump(c)
 
@@ -84,14 +94,18 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request, matchID, playerID 
 	// already broadcast "match_start" (they were still polling
 	// /api/queue/status), so bring them up to date directly rather than
 	// relying on having caught the original broadcast.
-	snap := entry.session.State()
+	snap, active := entry.session.State()
+	if !active {
+		c.conn.Close()
+		return
+	}
 	c.send <- map[string]interface{}{
-		"type":              "match_start",
-		"match_id":          snap.MatchID,
-		"board":             snap.Board,
-		"players":           snap.Players,
-		"scores":            snap.Scores,
-		"duration_seconds":  int(game.MatchDuration.Seconds()),
+		"type":             "match_start",
+		"match_id":         snap.MatchID,
+		"board":            snap.Board,
+		"players":          snap.Players,
+		"scores":           snap.Scores,
+		"duration_seconds": snap.RemainingSeconds,
 	}
 
 	h.readPump(entry, c)
@@ -101,7 +115,9 @@ func (h *Hub) readPump(entry *matchEntry, c *client) {
 	defer func() {
 		c.conn.Close()
 		h.mu.Lock()
-		delete(entry.clients, c.playerID)
+		if entry.clients[c.playerID] == c {
+			delete(entry.clients, c.playerID)
+		}
 		remaining := len(entry.clients)
 		h.mu.Unlock()
 		if remaining == 0 {

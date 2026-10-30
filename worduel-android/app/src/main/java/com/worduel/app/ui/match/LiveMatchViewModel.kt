@@ -7,6 +7,8 @@ import com.worduel.app.data.WordDuelWebSocket
 import com.worduel.app.data.models.MatchResult
 import com.worduel.app.data.models.Move
 import com.worduel.app.data.models.Player
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -37,6 +39,7 @@ class LiveMatchViewModel(
 
     private val _uiState = MutableStateFlow(LiveMatchUiState())
     val uiState: StateFlow<LiveMatchUiState> = _uiState.asStateFlow()
+    private var countdownJob: Job? = null
 
     val myPlayerId: String get() = playerId
 
@@ -53,16 +56,27 @@ class LiveMatchViewModel(
                 players = event.event.players,
                 scores = event.event.scores,
                 secondsRemaining = event.event.durationSeconds
-            )
+            ).also {
+                countdownJob?.cancel()
+                countdownJob = viewModelScope.launch {
+                    repeat(event.event.durationSeconds) {
+                        delay(1_000)
+                        _uiState.value = _uiState.value.copy(
+                            secondsRemaining = (_uiState.value.secondsRemaining - 1).coerceAtLeast(0)
+                        )
+                    }
+                }
+            }
 
             is WordDuelEvent.MoveResult -> _uiState.value = _uiState.value.copy(
                 scores = event.event.scores,
                 recentMoves = (listOf(event.event.move) + _uiState.value.recentMoves).take(20)
             )
 
-            is WordDuelEvent.MatchEnd -> _uiState.value = _uiState.value.copy(
-                matchResult = event.event.result
-            )
+            is WordDuelEvent.MatchEnd -> {
+                countdownJob?.cancel()
+                _uiState.value = _uiState.value.copy(matchResult = event.event.result)
+            }
 
             is WordDuelEvent.ConnectionError -> _uiState.value =
                 _uiState.value.copy(connectionError = event.message)
@@ -81,6 +95,7 @@ class LiveMatchViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        countdownJob?.cancel()
         socket.disconnect()
     }
 }

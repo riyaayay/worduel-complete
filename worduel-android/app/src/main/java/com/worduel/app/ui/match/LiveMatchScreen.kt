@@ -59,6 +59,8 @@ fun LiveMatchScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+		Text("${state.secondsRemaining}s remaining", style = MaterialTheme.typography.titleMedium)
+		Spacer(Modifier.height(8.dp))
         // Scoreboard
         Row(
             modifier = Modifier.fillMaxWidth(),

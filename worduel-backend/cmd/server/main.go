@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
@@ -22,18 +23,38 @@ func main() {
 	log.Printf("dictionary loaded: %d words", dict.Size())
 
 	hub := ws.NewHub()
-	memStore := store.NewMemoryStore()
+	var appStore store.Store = store.NewMemoryStore()
+	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
+		pgStore, err := store.OpenPostgres(context.Background(), dsn)
+		if err != nil {
+			log.Fatalf("database unavailable: %v", err)
+		}
+		defer pgStore.Close()
+		appStore = pgStore
+		log.Println("using PostgreSQL persistence")
+	} else {
+		if os.Getenv("ENVIRONMENT") == "production" {
+			log.Fatal("DATABASE_URL is required when ENVIRONMENT=production")
+		}
+		log.Println("DATABASE_URL not set; using in-memory store for local development")
+	}
 
 	// The queue needs a session factory, and the factory closes over the
 	// App (hub/dict/store) — so build the App first, then the queue, then
 	// attach the queue back to the App.
-	app := api.NewApp(hub, dict, memStore)
+	app := api.NewApp(hub, dict, appStore)
 	queue := matchmaking.New(64, app.NewSessionFactory())
 	app.SetQueue(queue)
 	go queue.Run()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/queue", app.HandleQueue)
+	mux.HandleFunc("/api/queue", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			app.HandleQueueCancel(w, r)
+			return
+		}
+		app.HandleQueue(w, r)
+	})
 	mux.HandleFunc("/api/queue/status", app.HandleQueueStatus)
 	mux.HandleFunc("/api/leaderboard", app.HandleLeaderboard)
 	mux.HandleFunc("/api/hint", app.HandleHint)
@@ -62,7 +83,7 @@ func main() {
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)

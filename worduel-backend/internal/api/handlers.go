@@ -8,7 +8,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"log"
 	"net/http"
+	"strings"
 	"sync"
 
 	"worduel-backend/internal/game"
@@ -51,6 +53,9 @@ func (a *App) trackMatches() {
 		a.assigned[session.P1.ID] = session.ID
 		a.assigned[session.P2.ID] = session.ID
 		a.mu.Unlock()
+		// Registration and player-to-match assignment must happen before Run;
+		// otherwise a fast client can receive an "unknown match" websocket 404.
+		go session.Run()
 	}
 }
 
@@ -67,7 +72,13 @@ func (a *App) NewSessionFactory() matchmaking.SessionFactory {
 	return func(p1, p2 game.Player) *game.Session {
 		matchID := randomID("match")
 		return game.NewSession(matchID, p1, p2, a.Dict, a.Hub, func(result game.MatchResult) {
-			a.Store.SaveMatchResult(result)
+			if err := a.Store.SaveMatchResult(result); err != nil {
+				log.Printf("persist match %s: %v", result.MatchID, err)
+			}
+			a.mu.Lock()
+			delete(a.assigned, result.Player1.ID)
+			delete(a.assigned, result.Player2.ID)
+			a.mu.Unlock()
 			a.Hub.CleanupMatch(result.MatchID)
 		})
 	}
@@ -87,20 +98,47 @@ func (a *App) HandleQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req queueRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Username == "" {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "username required", http.StatusBadRequest)
+		return
+	}
+	req.Username = strings.TrimSpace(req.Username)
+	if req.Username == "" || len(req.Username) > 32 {
+		http.Error(w, "username must be 1-32 characters", http.StatusBadRequest)
 		return
 	}
 
 	player := game.Player{ID: randomID("player"), Username: req.Username, Rating: 1000}
-	a.Store.SaveUser(player)
-	a.Queue.Enqueue(matchmaking.Ticket{Player: player})
+	if _, err := a.Store.SaveUser(player); err != nil {
+		http.Error(w, "unable to save player", http.StatusServiceUnavailable)
+		return
+	}
+	if !a.Queue.Enqueue(matchmaking.Ticket{Player: player}) {
+		http.Error(w, "matchmaking queue is full; please retry", http.StatusServiceUnavailable)
+		return
+	}
 
 	writeJSON(w, map[string]interface{}{
 		"player_id": player.ID,
 		"username":  player.Username,
 		"status":    "queued",
 	})
+}
+
+// HandleQueueCancel: DELETE /api/queue?player_id=X — lets a client that
+// gives up waiting remove its ticket rather than becoming a ghost opponent.
+func (a *App) HandleQueueCancel(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	playerID := r.URL.Query().Get("player_id")
+	if playerID == "" {
+		http.Error(w, "player_id required", http.StatusBadRequest)
+		return
+	}
+	a.Queue.Cancel(playerID)
+	writeJSON(w, map[string]string{"status": "cancelled"})
 }
 
 // HandleQueueStatus: GET /api/queue/status?player_id=X — the client polls
@@ -136,7 +174,12 @@ func (a *App) HandleWS(w http.ResponseWriter, r *http.Request) {
 
 // HandleLeaderboard: GET /api/leaderboard
 func (a *App) HandleLeaderboard(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, a.Store.Leaderboard(20))
+	entries, err := a.Store.Leaderboard(20)
+	if err != nil {
+		http.Error(w, "unable to load leaderboard", http.StatusServiceUnavailable)
+		return
+	}
+	writeJSON(w, entries)
 }
 
 // HandleHint: GET /api/hint?prefix=CA — the trie's WordsWithPrefix DFS,

@@ -14,10 +14,10 @@ import (
 
 // Store is what the API layer and matchmaking-finish callback depend on.
 type Store interface {
-	SaveUser(p game.Player) game.Player
+	SaveUser(p game.Player) (game.Player, error)
 	GetUser(id string) (game.Player, bool)
-	SaveMatchResult(result game.MatchResult)
-	Leaderboard(limit int) []LeaderboardEntry
+	SaveMatchResult(result game.MatchResult) error
+	Leaderboard(limit int) ([]LeaderboardEntry, error)
 }
 
 // LeaderboardEntry is one row of the ranked leaderboard. In production this
@@ -44,11 +44,11 @@ func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{users: make(map[string]game.Player)}
 }
 
-func (s *MemoryStore) SaveUser(p game.Player) game.Player {
+func (s *MemoryStore) SaveUser(p game.Player) (game.Player, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.users[p.ID] = p
-	return p
+	return p, nil
 }
 
 func (s *MemoryStore) GetUser(id string) (game.Player, bool) {
@@ -58,7 +58,7 @@ func (s *MemoryStore) GetUser(id string) (game.Player, bool) {
 	return p, ok
 }
 
-func (s *MemoryStore) SaveMatchResult(result game.MatchResult) {
+func (s *MemoryStore) SaveMatchResult(result game.MatchResult) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.results = append(s.results, result)
@@ -66,7 +66,7 @@ func (s *MemoryStore) SaveMatchResult(result game.MatchResult) {
 	// Update ratings: simple +/-10 win/loss adjustment, enough to make the
 	// leaderboard move for a demo. A real system would use Elo/Glicko.
 	if result.WinnerID == "" {
-		return
+		return nil
 	}
 	loserID := result.Player1.ID
 	if result.WinnerID == result.Player1.ID {
@@ -80,9 +80,10 @@ func (s *MemoryStore) SaveMatchResult(result game.MatchResult) {
 		l.Rating -= 5
 		s.users[loserID] = l
 	}
+	return nil
 }
 
-func (s *MemoryStore) Leaderboard(limit int) []LeaderboardEntry {
+func (s *MemoryStore) Leaderboard(limit int) ([]LeaderboardEntry, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	entries := make([]LeaderboardEntry, 0, len(s.users))
@@ -93,5 +94,5 @@ func (s *MemoryStore) Leaderboard(limit int) []LeaderboardEntry {
 	if limit > 0 && len(entries) > limit {
 		entries = entries[:limit]
 	}
-	return entries
+	return entries, nil
 }

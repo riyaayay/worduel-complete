@@ -1,0 +1,14 @@
+# Local build caches and Android/IDE configuration
+.cache/
+.gradle/
+local.properties
+*.keystore
+*.jks
+
+# Go output
+worduel-backend/worduel-server
+worduel-backend/*.exe
+
+# Android output
+worduel-android/app/build/
+worduel-android/build/

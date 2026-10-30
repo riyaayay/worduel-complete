@@ -56,6 +56,12 @@ class MatchmakingViewModel(
             }
             delay(1000)
         }
+		try {
+			api.cancelQueue(playerId)
+		} catch (_: Exception) {
+			// The locally visible timeout matters most; the server also expires
+			// unconnected matches, so a cancellation failure is not fatal.
+		}
         _state.value = MatchmakingState.Error("No opponent found — try again")
     }
 

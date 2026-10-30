@@ -13,6 +13,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -72,9 +73,10 @@ fun MatchmakingScreen(
             }
 
             is MatchmakingState.Matched -> {
-                // Fire the navigation callback once, then let the parent
-                // move us to the live match screen.
-                onMatched(s.playerId, s.matchId)
+                // Navigation is a one-shot side effect, not composition.
+                LaunchedEffect(s.playerId, s.matchId) {
+                    onMatched(s.playerId, s.matchId)
+                }
             }
         }
     }

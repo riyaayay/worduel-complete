@@ -15,29 +15,28 @@
 --
 --   matches ──1───< moves
 
-CREATE TABLE users (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    username      VARCHAR(32) NOT NULL UNIQUE,
-    email         VARCHAR(255) UNIQUE,
+CREATE TABLE IF NOT EXISTS users (
+    id            TEXT PRIMARY KEY,
+    username      VARCHAR(32) NOT NULL,
     rating        INTEGER NOT NULL DEFAULT 1000,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE matches (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    player1_id    UUID NOT NULL REFERENCES users(id),
-    player2_id    UUID NOT NULL REFERENCES users(id),
-    winner_id     UUID REFERENCES users(id),        -- NULL = tie
+CREATE TABLE IF NOT EXISTS matches (
+    id            TEXT PRIMARY KEY,
+    player1_id    TEXT NOT NULL REFERENCES users(id),
+    player2_id    TEXT NOT NULL REFERENCES users(id),
+    winner_id     TEXT REFERENCES users(id),        -- NULL = tie
     board         VARCHAR(16) NOT NULL,              -- the 16 letter tiles used, e.g. "OMBYPROABYIGIYUY"
     started_at    TIMESTAMPTZ NOT NULL,
     ended_at      TIMESTAMPTZ,
     CONSTRAINT different_players CHECK (player1_id <> player2_id)
 );
 
-CREATE TABLE moves (
+CREATE TABLE IF NOT EXISTS moves (
     id            BIGSERIAL PRIMARY KEY,
-    match_id      UUID NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
-    player_id     UUID NOT NULL REFERENCES users(id),
+    match_id      TEXT NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+    player_id     TEXT NOT NULL REFERENCES users(id),
     word          VARCHAR(32) NOT NULL,
     valid         BOOLEAN NOT NULL,
     score         INTEGER NOT NULL DEFAULT 0,
@@ -46,22 +45,22 @@ CREATE TABLE moves (
 
 -- Optional: periodic rating snapshots, useful for a rating-over-time chart
 -- on a player's profile screen.
-CREATE TABLE leaderboard_snapshots (
+CREATE TABLE IF NOT EXISTS leaderboard_snapshots (
     id            BIGSERIAL PRIMARY KEY,
-    user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     rating        INTEGER NOT NULL,
     snapshot_date DATE NOT NULL DEFAULT CURRENT_DATE
 );
 
 -- Fast match-replay queries: "give me all moves in match X in order".
-CREATE INDEX idx_moves_match_submitted ON moves (match_id, submitted_at);
+CREATE INDEX IF NOT EXISTS idx_moves_match_submitted ON moves (match_id, submitted_at);
 
 -- Fast "match history for user" queries in either player slot.
-CREATE INDEX idx_matches_player1 ON matches (player1_id);
-CREATE INDEX idx_matches_player2 ON matches (player2_id);
+CREATE INDEX IF NOT EXISTS idx_matches_player1 ON matches (player1_id);
+CREATE INDEX IF NOT EXISTS idx_matches_player2 ON matches (player2_id);
 
 -- Fast leaderboard reads straight from Postgres if Redis is ever cold.
-CREATE INDEX idx_users_rating ON users (rating DESC);
+CREATE INDEX IF NOT EXISTS idx_users_rating ON users (rating DESC);
 
 -- ---------------------------------------------------------------------
 -- Notes for the interview:

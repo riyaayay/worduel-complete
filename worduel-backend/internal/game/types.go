@@ -22,14 +22,15 @@ type Move struct {
 // the shape that gets flushed to PostgreSQL's `matches` + `moves` tables
 // when a session goroutine exits (see schema.sql).
 type MatchResult struct {
-	MatchID   string    `json:"match_id"`
-	Player1   Player    `json:"player1"`
-	Player2   Player    `json:"player2"`
+	MatchID   string         `json:"match_id"`
+	Board     []string       `json:"board"`
+	Player1   Player         `json:"player1"`
+	Player2   Player         `json:"player2"`
 	Scores    map[string]int `json:"scores"`
-	Moves     []Move    `json:"moves"`
-	WinnerID  string    `json:"winner_id"`
-	StartedAt time.Time `json:"started_at"`
-	EndedAt   time.Time `json:"ended_at"`
+	Moves     []Move         `json:"moves"`
+	WinnerID  string         `json:"winner_id"`
+	StartedAt time.Time      `json:"started_at"`
+	EndedAt   time.Time      `json:"ended_at"`
 }
 
 // letterScore is a Scrabble-style per-letter point value, used to score

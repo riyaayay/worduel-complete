@@ -51,6 +51,18 @@ class ApiClient(
         execute(request, QueueStatusResponse::class.java)
     }
 
+    /** DELETE /api/queue?player_id=X — prevents a timed-out client from
+     * remaining in the server queue and later being matched as a ghost. */
+    suspend fun cancelQueue(playerId: String) = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url("$baseUrl/api/queue?player_id=$playerId")
+            .delete()
+            .build()
+        http.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw ApiException("HTTP ${response.code}: unable to cancel queue")
+        }
+    }
+
     /** GET /api/leaderboard */
     suspend fun leaderboard(): List<LeaderboardEntry> = withContext(Dispatchers.IO) {
         val request = Request.Builder().url("$baseUrl/api/leaderboard").get().build()

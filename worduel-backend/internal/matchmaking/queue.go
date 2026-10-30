@@ -6,6 +6,7 @@ package matchmaking
 
 import (
 	"log"
+	"sync"
 
 	"worduel-backend/internal/game"
 )
@@ -22,9 +23,11 @@ type SessionFactory func(p1, p2 game.Player) *game.Session
 
 // Queue is the matchmaking service.
 type Queue struct {
-	tickets chan Ticket
-	newMatch chan *game.Session
-	factory  SessionFactory
+	tickets   chan Ticket
+	newMatch  chan *game.Session
+	factory   SessionFactory
+	mu        sync.Mutex
+	cancelled map[string]struct{}
 }
 
 // New creates a matchmaking queue. bufferSize controls how many players can
@@ -32,16 +35,40 @@ type Queue struct {
 // explicit backpressure mechanism.
 func New(bufferSize int, factory SessionFactory) *Queue {
 	return &Queue{
-		tickets:  make(chan Ticket, bufferSize),
-		newMatch: make(chan *game.Session, bufferSize),
-		factory:  factory,
+		tickets:   make(chan Ticket, bufferSize),
+		newMatch:  make(chan *game.Session, bufferSize),
+		factory:   factory,
+		cancelled: make(map[string]struct{}),
 	}
 }
 
 // Enqueue submits a player into the matchmaking pool. Non-blocking up to
 // the channel's buffer size.
-func (q *Queue) Enqueue(t Ticket) {
-	q.tickets <- t
+func (q *Queue) Enqueue(t Ticket) bool {
+	select {
+	case q.tickets <- t:
+		return true
+	default:
+		return false
+	}
+}
+
+// Cancel marks a waiting ticket as cancelled. Channels cannot remove an item
+// from their middle, so Run discards the ticket when it reaches the front.
+func (q *Queue) Cancel(playerID string) {
+	q.mu.Lock()
+	q.cancelled[playerID] = struct{}{}
+	q.mu.Unlock()
+}
+
+func (q *Queue) isCancelled(playerID string) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	_, cancelled := q.cancelled[playerID]
+	if cancelled {
+		delete(q.cancelled, playerID)
+	}
+	return cancelled
 }
 
 // Matches is a read-only stream of newly created sessions, consumed by
@@ -55,22 +82,32 @@ func (q *Queue) Matches() <-chan *game.Session {
 // off the channel, pairs them, and spawns a session goroutine to own that
 // match's game state. Call this once, e.g. `go queue.Run()`.
 func (q *Queue) Run() {
+	var waiting *Ticket
 	for {
-		first := <-q.tickets
-		second := <-q.tickets
-
-		// Never pair a player against themselves if they somehow got
-		// enqueued twice in a row.
-		if first.Player.ID == second.Player.ID {
-			q.tickets <- second
+		ticket := <-q.tickets
+		if q.isCancelled(ticket.Player.ID) {
+			continue
+		}
+		if waiting == nil {
+			waiting = &ticket
+			continue
+		}
+		if q.isCancelled(waiting.Player.ID) {
+			waiting = &ticket
 			continue
 		}
 
-		session := q.factory(first.Player, second.Player)
-		log.Printf("matchmaking: paired %s vs %s -> match %s",
-			first.Player.Username, second.Player.Username, session.ID)
+		// Never pair a player against themselves if they somehow got
+		// enqueued twice in a row.
+		if waiting.Player.ID == ticket.Player.ID {
+			continue
+		}
 
-		go session.Run()
+		session := q.factory(waiting.Player, ticket.Player)
+		log.Printf("matchmaking: paired %s vs %s -> match %s",
+			waiting.Player.Username, ticket.Player.Username, session.ID)
+
 		q.newMatch <- session
+		waiting = nil
 	}
 }

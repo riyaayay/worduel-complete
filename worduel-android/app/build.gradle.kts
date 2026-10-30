@@ -3,6 +3,15 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val releaseApiBaseUrl = providers.gradleProperty("WORDUEL_API_BASE_URL")
+    .orElse("https://configure-worduel-backend.invalid")
+    .get()
+    .removeSuffix("/")
+val releaseWsBaseUrl = providers.gradleProperty("WORDUEL_WS_BASE_URL")
+    .orElse("wss://configure-worduel-backend.invalid")
+    .get()
+    .removeSuffix("/")
+
 android {
     namespace = "com.worduel.app"
     compileSdk = 34
@@ -32,11 +41,13 @@ android {
             // uses to reach the host machine's localhost.
             buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8080\"")
             buildConfigField("String", "WS_BASE_URL", "\"ws://10.0.2.2:8080\"")
+            manifestPlaceholders["usesCleartextTraffic"] = "true"
         }
         release {
             isMinifyEnabled = false
-            buildConfigField("String", "API_BASE_URL", "\"https://your-worduel-backend.example.com\"")
-            buildConfigField("String", "WS_BASE_URL", "\"wss://your-worduel-backend.example.com\"")
+            buildConfigField("String", "API_BASE_URL", "\"$releaseApiBaseUrl\"")
+            buildConfigField("String", "WS_BASE_URL", "\"$releaseWsBaseUrl\"")
+            manifestPlaceholders["usesCleartextTraffic"] = "false"
         }
     }
 

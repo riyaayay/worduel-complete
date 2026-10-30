@@ -1,8 +1,10 @@
 package game
 
 import (
+	"math"
 	"math/rand"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -46,16 +48,18 @@ var consonants = []rune("BCDFGHJKLMNPQRSTVWXYZ")
 // the channel is the synchronization primitive, which is the idiomatic Go
 // answer to "how do you avoid locks here".
 type Session struct {
-	ID      string
-	P1, P2  Player
-	board   []rune
-	scores  map[string]int
-	moves   []Move
-	found   map[string]bool // "playerID:WORD" -> already scored, prevents re-submission farming
+	ID     string
+	P1, P2 Player
+	board  []rune
+	scores map[string]int
+	moves  []Move
+	found  map[string]bool // "playerID:WORD" -> already scored, prevents re-submission farming
 
-	MoveCh chan MoveRequest
-	queryCh chan chan StateSnapshot
-	done   chan struct{}
+	MoveCh   chan MoveRequest
+	queryCh  chan chan StateSnapshot
+	stopCh   chan struct{}
+	finished chan struct{}
+	stopOnce sync.Once
 
 	validator   Validator
 	broadcaster Broadcaster
@@ -76,7 +80,8 @@ func NewSession(id string, p1, p2 Player, validator Validator, broadcaster Broad
 		found:       make(map[string]bool),
 		MoveCh:      make(chan MoveRequest, 32),
 		queryCh:     make(chan chan StateSnapshot),
-		done:        make(chan struct{}),
+		stopCh:      make(chan struct{}),
+		finished:    make(chan struct{}),
 		validator:   validator,
 		broadcaster: broadcaster,
 		onFinish:    onFinish,
@@ -102,20 +107,37 @@ func generateBoard() []rune {
 // player who connects a few hundred ms after the match was created and
 // missed the original "match_start" broadcast).
 type StateSnapshot struct {
-	MatchID string        `json:"match_id"`
-	Board   []string      `json:"board"`
-	Players []Player      `json:"players"`
-	Scores  map[string]int `json:"scores"`
+	MatchID          string         `json:"match_id"`
+	Board            []string       `json:"board"`
+	Players          []Player       `json:"players"`
+	Scores           map[string]int `json:"scores"`
+	RemainingSeconds int            `json:"remaining_seconds"`
 }
 
 // State requests a snapshot from the owning goroutine via a request/response
 // channel round-trip — the idiomatic Go alternative to locking a mutex
 // around the session's fields for this one-off read from another
 // goroutine (the hub, when a client connects).
-func (s *Session) State() StateSnapshot {
-	resp := make(chan StateSnapshot)
-	s.queryCh <- resp
-	return <-resp
+func (s *Session) State() (StateSnapshot, bool) {
+	resp := make(chan StateSnapshot, 1)
+	select {
+	case s.queryCh <- resp:
+	case <-s.finished:
+		return StateSnapshot{}, false
+	}
+	select {
+	case state := <-resp:
+		return state, true
+	case <-s.finished:
+		return StateSnapshot{}, false
+	}
+}
+
+// HasPlayer confirms that a websocket caller belongs to this match. The
+// player structs are immutable after construction, so this is safe without
+// sharing the mutable match state owned by Run.
+func (s *Session) HasPlayer(playerID string) bool {
+	return playerID == s.P1.ID || playerID == s.P2.ID
 }
 
 func (s *Session) snapshot() StateSnapshot {
@@ -123,11 +145,16 @@ func (s *Session) snapshot() StateSnapshot {
 	for k, v := range s.scores {
 		scoresCopy[k] = v
 	}
+	remaining := int(math.Ceil((matchDuration - time.Since(s.startedAt)).Seconds()))
+	if remaining < 0 {
+		remaining = 0
+	}
 	return StateSnapshot{
-		MatchID: s.ID,
-		Board:   s.Board(),
-		Players: []Player{s.P1, s.P2},
-		Scores:  scoresCopy,
+		MatchID:          s.ID,
+		Board:            s.Board(),
+		Players:          []Player{s.P1, s.P2},
+		Scores:           scoresCopy,
+		RemainingSeconds: remaining,
 	}
 }
 
@@ -145,16 +172,17 @@ func (s *Session) Board() []string {
 // off MoveCh, so two simultaneous submissions from the two players can
 // never race on session state.
 func (s *Session) Run() {
+	defer close(s.finished)
 	matchTimer := time.NewTimer(matchDuration)
 	idleTimer := time.NewTimer(idleTimeout)
 	defer matchTimer.Stop()
 	defer idleTimer.Stop()
 
 	s.broadcaster.Broadcast(s.ID, map[string]interface{}{
-		"type":     "match_start",
-		"match_id": s.ID,
-		"board":    s.Board(),
-		"players":  []Player{s.P1, s.P2},
+		"type":             "match_start",
+		"match_id":         s.ID,
+		"board":            s.Board(),
+		"players":          []Player{s.P1, s.P2},
 		"duration_seconds": int(matchDuration.Seconds()),
 	})
 
@@ -178,7 +206,7 @@ func (s *Session) Run() {
 			s.finish()
 			return
 
-		case <-s.done:
+		case <-s.stopCh:
 			s.finish()
 			return
 		}
@@ -188,10 +216,7 @@ func (s *Session) Run() {
 // Stop allows an external caller (e.g. both sockets disconnected) to end
 // the match early.
 func (s *Session) Stop() {
-	select {
-	case s.done <- struct{}{}:
-	default:
-	}
+	s.stopOnce.Do(func() { close(s.stopCh) })
 }
 
 func (s *Session) handleMove(req MoveRequest) {
@@ -238,6 +263,7 @@ func (s *Session) finish() {
 
 	result := MatchResult{
 		MatchID:   s.ID,
+		Board:     s.Board(),
 		Player1:   s.P1,
 		Player2:   s.P2,
 		Scores:    s.scores,
