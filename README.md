@@ -65,6 +65,7 @@ without configuration cannot accidentally target a development server.
 
 ## Deploy the backend
 
+<<<<<<< HEAD
 The backend expects these environment variables:
 
 | Variable | Required in production | Purpose |
@@ -74,6 +75,15 @@ The backend expects these environment variables:
 | `ENVIRONMENT` | Yes | Set to `production`; this makes a missing database URL a startup error |
 
 Build and run the container from `worduel-backend`:
+=======
+
+## ER diagram
+
+See `worduel-backend/schema.sql` for the full schema + comments on *why*
+each design choice was made (denormalizing `board` onto `matches`, storing
+invalid moves too, etc.) — that "why", not just the boxes-and-arrows, is
+what actually reads as depth in an interview.
+>>>>>>> f80d004dad03d3cdbdb2aaac88204551355e392b
 
 ```powershell
 docker build -t worduel-backend .
